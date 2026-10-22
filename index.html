@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="ru" class="lock">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Теперь все?</title>
+<meta name="description" content="Верлибр «Теперь все?» — опыт чтения у красного горизонта.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=Golos+Text:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   ОСНОВА
+   ============================================================ */
+:root{
+  --ink:#f1e9dc;        /* тёплый off-white */
+  --dim:#8f867d;
+  --tdim:#b6ab9d;       /* текст вне луча — читаемый */
+  --mid:#d9c9b8;
+  --lit:#fff3e4;        /* текст под лучом */
+  --red:#d8463a;
+  --red-deep:#8e1c1a;
+  --bone:#d9cdb8;
+  --eye:#cfe7d8;
+  --black:#070607;
+  --serif:"Cormorant Garamond",Palatino,"Times New Roman",serif;
+  --sans:"Golos Text",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --hzy:50vh;           /* y линии горизонта на экране (ставит JS) */
+}
+*{box-sizing:border-box}
+html{background:var(--black);-webkit-text-size-adjust:100%;overflow-anchor:none}
+html.lock{overflow:hidden;height:100%}
+body{
+  margin:0;background:var(--black);color:var(--ink);
+  font-family:var(--serif);font-weight:400;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  overscroll-behavior-y:none;touch-action:pan-y;
+}
+@media (pointer:fine){ html.has-light, html.has-light body, html.has-light button{cursor:none} }
+::selection{background:rgba(190,40,30,.55);color:var(--ink);-webkit-text-fill-color:var(--ink)}
+.sr-only{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;user-select:none}
+a{color:inherit}
+
+/* ============================================================
+   СЛОИ: холст → свет → сцена с текстом → пепел → заставка
+   ============================================================ */
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;background:#0a0708}
+#gl.fallback{background-size:cover;background-position:60% 50%}
+#dot{
+  position:fixed;left:0;top:0;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;
+  background:var(--red);box-shadow:0 0 14px 2px rgba(226,75,56,.65);z-index:40;pointer-events:none;
+  transition:transform .25s ease,opacity .6s;opacity:0;will-change:transform
+}
+#dot.hover{transform:scale(3)}
+@media (pointer:coarse){#dot{display:none}}
+#ash{position:fixed;inset:0;width:100%;height:100%;z-index:3;pointer-events:none}
+
+#track{position:relative;z-index:0;width:100%;pointer-events:none}
+
+/* ============================================================
+   СЦЕНА — текст
+   ============================================================ */
+#stage{position:fixed;inset:0;z-index:2;overflow:hidden}
+.scene{position:absolute;inset:0;visibility:hidden}
+.scene.active{visibility:visible}
+.line{
+  position:absolute;margin:0;visibility:hidden;max-width:88vw;
+  font-family:var(--serif);font-weight:400;text-wrap:balance;
+}
+.line .in{display:block;position:relative;opacity:0;will-change:transform,opacity;color:transparent}
+/* Свет курсора: градиент, обрезанный по тексту. Лежит на листовых элементах
+   (слово или буква), потому что Chrome не красит трансформированных потомков. */
+.line .in .w{display:inline-block;white-space:pre}
+.line .in .ch{display:inline-block}
+.line .in br{display:block}
+.line .in .w,.line.letters .in .ch{
+  background-image:radial-gradient(circle at var(--lx,50%) var(--ly,50%),var(--lit) 0,var(--mid) var(--r1,16vmax),var(--tdim) var(--r2,46vmax));
+  -webkit-background-clip:text;background-clip:text;
+}
+.line.letters .in .w{background:none}
+.line.lit .in .w{background-image:radial-gradient(circle at var(--lx,50%) var(--ly,50%),#fff 0,var(--ink) var(--r1,20vmax),#c6bbad var(--r2,52vmax))}
+.line.nolit .in .w,.line.nolit .in .ch,.line.hollow-all .in .w{background:none}
+.line.nolit .in{color:var(--ink)}
+
+/* Кегли — резкие смены. */
+.s-s  {font-size:clamp(1.05rem,1.5vw,1.45rem);line-height:1.45}
+.s-m  {font-size:clamp(1.5rem,2.8vw,2.7rem);line-height:1.3}
+.s-l  {font-size:clamp(2rem,4.6vw,4.8rem);line-height:1.1}
+.s-xl {font-size:clamp(2.6rem,7vw,7.8rem);line-height:1.02}
+.s-xxl{font-size:clamp(3rem,10.5vw,12.5rem);line-height:.95;letter-spacing:-.01em}
+.w300{font-weight:300}.w500{font-weight:500}.w600{font-weight:600}.w700{font-weight:700}
+.it{font-style:italic}
+.caps{text-transform:uppercase;letter-spacing:.28em;font-weight:500}
+
+/* Позиции. Никаких колонок — текст живёт по всему экрану. */
+.p-tl{left:6vw;top:13vh;max-width:72vw}
+.p-tr{right:6vw;top:13vh;text-align:right;max-width:72vw}
+.p-cl{left:6vw;top:50%;transform:translateY(-50%);max-width:80vw}
+.p-c {left:50%;top:50%;transform:translate(-50%,-50%);width:90vw;max-width:90vw;text-align:center}
+.p-cr{right:6vw;top:50%;transform:translateY(-50%);text-align:right;max-width:80vw}
+.p-bl{left:6vw;bottom:13vh;max-width:72vw}
+.p-br{right:6vw;bottom:13vh;text-align:right;max-width:72vw}
+.p-bc{left:50%;bottom:11vh;transform:translateX(-50%);width:88vw;text-align:center}
+.p-hz{left:6vw;top:var(--hzy);transform:translateY(-100%);max-width:84vw}
+.p-wide{left:5vw;right:5vw;top:50%;transform:translateY(-50%);max-width:none}
+
+/* Специальные слова */
+.w.red{color:var(--red)}
+.w.hollow{color:transparent;-webkit-text-stroke:1.2px var(--ink);background:none!important}
+.w.eye{color:var(--eye)}
+.w.tail{font-size:.58em;font-weight:300;opacity:.72}
+.w.neg{position:relative}
+.w.neg::after{content:"";position:absolute;left:-.04em;top:52%;height:.06em;background:var(--red);width:calc(104% * var(--st,0))}
+.w.obj{transition:none}
+.w.me{color:var(--red)}
+.w.shade{text-shadow:.12em .14em 0 rgba(0,0,0,.85),.2em .24em 14px rgba(0,0,0,.6)}
+.w.eat{font-weight:700}
+.w.huge{font-size:21vw;line-height:.85;font-weight:500;display:inline-block;margin-top:.04em;letter-spacing:-.02em}
+.w.src{font-style:italic}
+.ch.caret{box-shadow:inset -.07em 0 0 var(--red)}
+.line.hollow-all .in{color:transparent;-webkit-text-stroke:1px rgba(241,233,220,.85);-webkit-background-clip:text;background-clip:text}
+.refl{
+  display:block;position:absolute;left:0;right:0;top:100%;margin-top:-.08em;
+  transform:scaleY(-1);transform-origin:top;color:var(--dim);opacity:0;pointer-events:none;user-select:none;
+  -webkit-mask-image:linear-gradient(to top,transparent 5%,#000 95%);mask-image:linear-gradient(to top,transparent 5%,#000 95%);
+  filter:url(#ripple-soft) blur(1px)
+}
+
+/* ============================================================
+   ЗАСТАВКА, ПРЕЛОАДЕР, ЗВУК
+   ============================================================ */
+#loader{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:var(--black);transition:opacity .9s ease;}
+#loader.off{opacity:0;pointer-events:none}
+#loader i{display:block;width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 24px 4px rgba(226,75,56,.5);animation:breath 1.8s ease-in-out infinite}
+#loader span{position:absolute;bottom:7vh;left:50%;transform:translateX(-50%);font:400 10px/1 var(--sans);letter-spacing:.32em;text-transform:uppercase;color:var(--dim)}
+@keyframes breath{0%,100%{transform:scale(.7);opacity:.6}50%{transform:scale(1.2);opacity:1}}
+
+#intro{position:fixed;inset:0;z-index:30;pointer-events:none}
+#intro h1{
+  position:absolute;left:6vw;bottom:20vh;margin:0;font-family:var(--serif);font-weight:400;
+  font-size:clamp(3rem,9.5vw,10rem);line-height:.9;letter-spacing:-.01em;color:var(--ink);
+  opacity:0;transform:translateY(.15em);transition:opacity 1.4s ease,transform 1.6s cubic-bezier(.2,.7,.2,1)
+}
+#intro h1.on{opacity:1;transform:none}
+#hint{
+  position:absolute;left:50%;bottom:5vh;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:14px;
+  font:400 10px/1 var(--sans);letter-spacing:.34em;text-transform:uppercase;color:var(--dim);
+  opacity:0;transition:opacity 1.2s ease
+}
+#hint.on{opacity:1}
+#hint em{display:block;width:1px;height:44px;background:linear-gradient(var(--red),transparent);transform-origin:top;animation:fall 2.2s ease-in-out infinite}
+@keyframes fall{0%{transform:scaleY(0);opacity:0}30%{opacity:1}100%{transform:scaleY(1);opacity:0}}
+#hint b{font-weight:400}
+#hint .sc{display:none}
+@media (pointer:fine){#hint .sc{display:inline}}
+
+#snd{
+  position:fixed;top:4vh;right:5vw;z-index:50;background:none;border:0;padding:10px 0;
+  font:400 10px/1 var(--sans);letter-spacing:.32em;text-transform:uppercase;color:var(--dim);
+  display:flex;align-items:center;gap:12px;opacity:0;transition:opacity 1s ease .4s,color .3s
+}
+#snd.show{opacity:1}
+#snd:hover,#snd:focus-visible{color:var(--ink);outline:none}
+#snd:focus-visible{text-decoration:underline;text-underline-offset:.5em}
+#snd i{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--dim);transition:background .3s,box-shadow .3s}
+#snd[aria-pressed="true"] i{background:var(--red);box-shadow:0 0 10px 2px rgba(226,75,56,.6);animation:breath 2.4s ease-in-out infinite}
+
+#auto{
+  position:fixed;top:4vh;left:5vw;z-index:50;background:none;border:0;padding:10px 0;
+  font:400 10px/1 var(--sans);letter-spacing:.32em;text-transform:uppercase;color:var(--dim);
+  display:flex;align-items:center;gap:12px;opacity:0;transition:opacity 1s ease .4s,color .3s
+}
+#auto.show{opacity:1}
+#auto:hover,#auto:focus-visible{color:var(--ink);outline:none}
+#auto:focus-visible{text-decoration:underline;text-underline-offset:.5em}
+#auto i{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--dim);transition:background .3s,box-shadow .3s}
+#auto[aria-pressed="true"] i{background:var(--red);box-shadow:0 0 10px 2px rgba(226,75,56,.6);animation:breath 2.4s ease-in-out infinite}
+
+/* ============================================================
+   МОБИЛЬНЫЙ РИТМ — не сжатая версия, а вертикальная
+   ============================================================ */
+@media (max-width:760px){
+  .line{left:6vw!important;right:6vw!important;max-width:none!important;width:auto!important;text-align:left!important}
+  .p-tl,.p-tr,.p-tc{top:12svh;transform:none!important}
+  .p-cl,.p-cr,.p-wide{top:36svh;transform:none!important}
+  .p-c{top:34svh;transform:none!important;text-align:center!important}
+  .p-bl,.p-br,.p-bc{top:auto;bottom:16svh;transform:none!important}
+  .p-hz{top:var(--hzy);transform:translateY(-100%)!important}
+  .s-s{font-size:1.15rem}.s-m{font-size:1.7rem;line-height:1.25}.s-l{font-size:9.4vw;line-height:1.08}
+  .s-xl{font-size:11.5vw;line-height:1}.s-xxl{font-size:15vw;line-height:.95}
+  .w.huge{font-size:25vw}
+  .w.tail{font-size:.66em}
+  .line{--r1:22vmax;--r2:60vmax}
+  #intro h1{font-size:17vw;bottom:24svh}
+  #snd{top:3svh;right:6vw}
+  #auto{top:3svh;left:6vw}
+}
+
+/* ============================================================
+   REDUCED MOTION — спокойная версия: поток текста, без искажений
+   ============================================================ */
+#cal{position:fixed;left:50%;bottom:4vh;transform:translateX(-50%);z-index:70;display:none;pointer-events:none;max-width:92vw;padding:12px 18px;
+  background:rgba(0,0,0,.78);color:var(--ink);font:400 12px/1.7 var(--sans);letter-spacing:.06em;text-align:center;white-space:pre-line}
+html.calib #cal{display:block}
+html.calib #stage,html.calib #intro,html.calib #snd,html.calib #auto,html.calib #dot{opacity:0!important;pointer-events:none}
+html.calib,html.calib *{cursor:crosshair!important}
+#fps{position:fixed;left:12px;bottom:12px;z-index:70;display:none;pointer-events:none;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#9fe0a8}
+html.show-fps #fps{display:block}
+
+html.rm{overflow:auto;height:auto}
+html.rm #track,html.rm #auto,html.rm #dot,html.rm #ash,html.rm #hint em,html.rm .refl{display:none}
+html.rm #gl{opacity:.55}
+html.rm #intro{position:relative;height:100svh;pointer-events:auto}
+html.rm #intro h1{opacity:1;transform:none;transition:none}
+html.rm #stage{position:relative;inset:auto;overflow:visible;padding:0 6vw 30vh}
+html.rm .scene{position:relative;inset:auto;visibility:visible;padding:18vh 0 0}
+html.rm .line{position:static;visibility:visible;transform:none;max-width:40ch;margin:0 0 .9em;text-align:left;width:auto}
+html.rm .p-c,html.rm .p-cr,html.rm .p-br,html.rm .p-bc,html.rm .p-tr{margin-left:auto;text-align:left}
+html.rm .line .in{opacity:1;transform:none!important;filter:none!important;clip-path:none!important;color:var(--ink);background:none;-webkit-text-stroke:0}
+html.rm .line .in .w,html.rm .line .in .ch{opacity:1!important;transform:none!important;filter:none!important;background:none;color:inherit}
+html.rm .w.hollow{color:transparent;-webkit-text-stroke:1px var(--ink)}
+html.rm .w.neg{--st:1}
+html.rm .s-xxl{font-size:clamp(2.6rem,7vw,7rem)}html.rm .s-xl{font-size:clamp(2.2rem,5.5vw,5.5rem)}html.rm .w.huge{font-size:clamp(3rem,12vw,12rem)}
+</style>
+</head>
+<body>
+
+<!-- Холст: картинка живёт в шейдере -->
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="ash" aria-hidden="true"></canvas>
+
+<!-- Текстовая сцена (строится из массива scenes) -->
+<main id="stage" aria-hidden="true"></main>
+<div id="track" aria-hidden="true"></div>
+
+<!-- Доступная копия стихотворения в порядке чтения (для скринридеров в кинематографичном режиме) -->
+<article id="poem" class="sr-only"></article>
+
+<div id="dot" aria-hidden="true"></div>
+
+<!-- Заставка -->
+<div id="intro">
+  <h1 id="title">Теперь все?</h1>
+  <div id="hint"><em></em><b><span class="sc">scroll · </span>листай</b></div>
+</div>
+
+<button id="snd" type="button" aria-pressed="false" aria-label="Включить звук"><i></i><span>звук — выкл</span></button>
+<button id="auto" type="button" aria-pressed="false" aria-label="Читать автоматически"><i></i><span>авто — выкл</span></button>
+<div id="cal" aria-hidden="true"></div>
+
+<div id="loader" role="status" aria-live="polite"><i></i><span>загрузка</span></div>
+
+<!-- SVG-фильтры: чернила, марево, рябь -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="ink" x="-10%" y="-25%" width="120%" height="150%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="3.5" xChannelSelector="R" yChannelSelector="G" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="0.5" result="b"/>
+    <feColorMatrix in="b" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 14 -4"/>
+  </filter>
+  <filter id="waver" x="-10%" y="-40%" width="120%" height="180%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.012 0.03" numOctaves="2" seed="7" result="n"/>
+    <feDisplacementMap id="waverMap" in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="ripple" x="-10%" y="-40%" width="120%" height="180%">
+    <feTurbulence type="turbulence" baseFrequency="0.004 0.09" numOctaves="1" seed="2" result="n"/>
+    <feDisplacementMap id="rippleMap" in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="ripple-soft" x="-10%" y="-40%" width="120%" height="180%">
+    <feTurbulence type="turbulence" baseFrequency="0.003 0.08" numOctaves="1" seed="5" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="7" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<script>
+(() => {
+'use strict';
+
+/* ============================================================
+   0. УТИЛИТЫ
+   ============================================================ */
+const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, v) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+const eo = p => 1 - Math.pow(1 - p, 3);          // ease-out
+const ei = p => p * p * p;                        // ease-in
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const $ = s => document.querySelector(s);
+
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const COARSE = matchMedia('(pointer: coarse)').matches;
+const MOBILE = () => innerWidth <= 760;
+
+/* Качество: при просадке FPS само понижается (разрешение шейдера → SVG-фильтры → подсветка слов).
+   ?q=0..3 в адресе фиксирует уровень, клавиша F показывает FPS. */
+const Q = { level: 0, res: 1 }, QRES = [1, .78, .62, .5];
+function setQuality(l) {
+  Q.level = l; Q.res = QRES[l];
+  if (l >= 3) document.querySelectorAll('.line').forEach(el => el.classList.add('nolit'));
+  resize();
+}
+if (RM) document.documentElement.classList.add('rm');
+
+/* ============================================================
+   1. КАРТИНКА — координаты в долях изображения (y сверху вниз)
+   ============================================================ */
+const IMG = {
+  src: 'Одинокий у красного горизонта.png',
+  w: 1145, h: 1374,
+  sun: [0.755, 0.468],        // источник красного света
+  horizon: 0.49,              // линия горизонта
+  eyeL: [0.310, 0.525],       // глаза пантеры
+  eyeR: [0.345, 0.527],
+};
+
+// Сохранённая калибровка глаз (клавиша E на странице)
+try { const sv = JSON.parse(localStorage.getItem('verlib-eyes') || 'null'); if (sv && sv.L && sv.R) { IMG.eyeL = sv.L; IMG.eyeR = sv.R; } } catch (e) {}
+
+/* Состояние света/камеры по умолчанию. Любая сцена переопределяет часть полей. */
+const LOOK0 = {
+  focus: [0.55, 0.50],  // куда смотрит камера (доли картинки)
+  zoom: 1.0,
+  heat: 0.45,           // тепловое марево у горизонта
+  glow: 0.55,           // огонь горизонта
+  vig: 0.75,            // виньетка
+  grain: 0.08,          // зерно
+  dark: 0.0,            // общее затемнение
+  water: 0.0,           // чёрная вода снизу
+  eyes: 0.0,            // свечение глаз пантеры
+  red: 0.0,             // усиление красного
+  flicker: 0.4,         // дрожь света от жара
+};
+
+/* ============================================================
+   НАСТРОЙКИ ТЕМПА (правь здесь)
+   ============================================================ */
+const PACE = 0.72;       // общий множитель времени: больше — медленнее и длиннее, меньше — быстрее
+const MAXV = 48;         // «потолок скорости чтения», vh/сек. Как бы быстро ни крутили колесо,
+                         // текст не побежит быстрее. Меньше — медленнее и тяжелее, больше — свободнее.
+const AUTO_SPEED = 26;   // скорость кнопки «авто», vh/сек
+
+/* ============================================================
+   2. ПАРТИТУРА — сцены описаны данными
+   t        — [старт, появление, пауза, уход] строки в vh внутри сцены. Длина сцены считается сама.
+   pad      — тишина после последней строки (по умолчанию 40)
+   look     — состояние света в начале, lookEnd — в конце (интерполяция)
+   sound    — параметры дрона/шума/удара
+   lines    — строки: text (разметка [слово|класс] не меняет текст),
+              fx — хореография, pos/size — классы,
+              hit — сила низкого удара при появлении, opts — параметры эффекта
+   ============================================================ */
+const scenes = [
+  { id: 'ash', name: 'Пепел',
+    look: { focus: [0.62, 0.50], zoom: 1.04, heat: .3, glow: .32, grain: .10, vig: .82, flicker: .55 },
+    lookEnd: { focus: [0.58, 0.50], zoom: 1.0, glow: .45 },
+    sound: { drone: .35, noise: .12, hz: 55, cut: 240 },
+    lines: [
+      { text: 'То, что осталось, когда всё сгорело.', fx: 'burn', opts: { from: 4 }, pos: 'p-cl', size: 's-xl', t: [30, 60, 60, 90], hit: .5 },
+      { text: 'Пустота с [зубами.|bite]', fx: 'teeth', pos: 'p-c', size: 's-xxl w500', t: [245, 55, 70, 45], hit: .9 },
+      { text: 'Нищета как чистота.', fx: 'clean', pos: 'p-c', size: 's-l w300', t: [415, 60, 70, 45] },
+      { text: 'И смех.', fx: 'cut', pos: 'p-cr', size: 's-xl it', t: [570, 24, 75, 24] },
+      { text: 'Так было.', fx: 'settle', pos: 'p-cl', size: 's-xl w300', t: [655, 55, 65, 55] },
+    ] },
+
+  { id: 'library', name: 'Библиотека',
+    look: { focus: [0.24, 0.30], zoom: 1.12, heat: .12, glow: .22, grain: .13, vig: .88, dark: .1 },
+    lookEnd: { focus: [0.30, 0.34], zoom: 1.06 },
+    sound: { drone: .3, noise: .2, hz: 49, cut: 200 },
+    lines: [
+      { text: 'Библиотека закрыта.', fx: 'shutter', pos: 'p-tl', size: 's-l caps', t: [30, 60, 65, 45], hit: .6 },
+      { text: 'Не [сын|neg] и не [человек.|neg]', fx: 'strike', pos: 'p-cr', size: 's-xl', t: [190, 60, 80, 45] },
+      { text: 'Оператор без операций.', fx: 'type', pos: 'p-bl', size: 's-m', t: [350, 80, 70, 45] },
+    ] },
+
+  { id: 'beast', name: 'Зверь',
+    look: { focus: [0.33, 0.53], zoom: 1.28, heat: .08, glow: .18, grain: .09, vig: .92, eyes: 1, dark: .15 },
+    lookEnd: { focus: [0.36, 0.55], zoom: 1.2, glow: .25 },
+    sound: { drone: .45, noise: .08, hz: 41, cut: 160 },
+    lines: [
+      { text: 'Зверь, у которого открылись глаза — и ему больше нечего делать.', fx: 'eyelid', opts: { breakBefore: [5], tailFrom: 5 }, pos: 'p-wide', size: 's-l', t: [30, 80, 95, 50], hit: .4 },
+      { text: '[Одеяло|obj] не нужно.', fx: 'negate', pos: 'p-tl', size: 's-l', t: [215, 45, 200, 40], hit: .45 },
+      { text: '[Прощение|obj] не нужно.', fx: 'negate', pos: 'p-cl', size: 's-l', t: [275, 45, 150, 40], hit: .5 },
+      { text: '[Судить|obj] некому.', fx: 'negate', pos: 'p-bl', size: 's-l', t: [350, 45, 85, 45], hit: .7 },
+    ] },
+
+  { id: 'concrete', name: 'Бетон',
+    look: { focus: [0.45, 0.60], zoom: 1.0, heat: .5, glow: .5, grain: .13, vig: .7, red: .15 },
+    lookEnd: { focus: [0.52, 0.56], glow: .6 },
+    sound: { drone: .4, noise: .18, hz: 55, cut: 300 },
+    lines: [
+      { text: 'Пантера на бетоне.', fx: 'thud', pos: 'p-c', size: 's-xxl w700', t: [30, 26, 95, 35], hit: 1 },
+      { text: 'Смех на обочине.', fx: 'edge', pos: 'p-cr', size: 's-xl it', t: [186, 65, 90, 45] },
+      { text: 'Дом, из которого не выгнать.', fx: 'still', pos: 'p-tl', size: 's-l', t: [330, 60, 90, 45], hit: .4 },
+      { text: 'Выкидыш [зелёной|eye] прекрасной — пришёл взять.', fx: 'rise', pos: 'p-bl', size: 's-l', t: [470, 60, 85, 45], hit: .6 },
+    ] },
+
+  { id: 'red', name: 'Красное',
+    look: { focus: [0.62, 0.47], zoom: 1.08, heat: .7, glow: .9, red: .55, grain: .08, vig: .6, flicker: .8 },
+    lookEnd: { focus: [0.6, 0.48], glow: 1.1, red: .7 },
+    sound: { drone: .55, noise: .22, hz: 62, cut: 420 },
+    lines: [
+      { text: 'Жилетка сгорела. ', fx: 'burn', opts: { from: 0, speed: 1.6 }, pos: 'p-tl', size: 's-l', t: [30, 45, 45, 75], hit: .5 },
+      { text: 'Одет в [красное|red] и [пустоту.|hollow]', fx: 'words', pos: 'p-c nolit', size: 's-xl', t: [205, 55, 80, 40], hit: .7 },
+      { text: 'Кровь из носа — чернила.', fx: 'ink', pos: 'p-cl nolit', size: 's-xl', t: [385, 75, 70, 40] },
+      { text: 'Другой видим. ', fx: 'mirror', pos: 'p-hz', size: 's-l', t: [575, 50, 60, 40] },
+      { text: 'Он — священная заброшенность.', fx: 'scatter', pos: 'p-bc', size: 's-m w300', t: [710, 50, 70, 50] },
+    ] },
+
+  { id: 'roadside', name: 'Обочина',
+    look: { focus: [0.20, 0.50], zoom: 1.15, heat: .9, glow: .7, grain: .1, vig: .75, red: .2 },
+    lookEnd: { focus: [0.52, 0.50], zoom: 1.0, glow: 1.0, red: .35 },
+    sound: { drone: .5, noise: .3, hz: 55, cut: 360 },
+    lines: [
+      { text: 'Псы на обочине — [это|me] [я.|me]', fx: 'step', pos: 'p-cl', size: 's-xl', t: [30, 65, 75, 40], hit: .5 },
+      { text: 'Отдаю без причины. ', fx: 'driftL', pos: 'p-tl', size: 's-l', t: [180, 55, 125, 40] },
+      { text: 'Беру в другом месте без причины.', fx: 'driftR', pos: 'p-br', size: 's-l', t: [240, 55, 100, 40] },
+      { text: 'Мир пахнет страхом.', fx: 'waver', pos: 'p-c', size: 's-xl', t: [410, 55, 75, 45], hit: .4 },
+      { text: 'Любви не ищу — я и есть [любовь.|huge]', fx: 'monolith', opts: { breakBefore: [7] }, pos: 'p-wide lit', size: 's-m', t: [590, 95, 75, 50], hit: .8 },
+    ] },
+
+  { id: 'same', name: 'Одно и то же',
+    look: { focus: [0.55, 0.52], zoom: 1.0, heat: .4, glow: .55, grain: .1, vig: .75, dark: .08 },
+    lookEnd: { focus: [0.62, 0.50], glow: .5 },
+    sound: { drone: .4, noise: .14, hz: 49, cut: 260 },
+    lines: [
+      { text: 'Тапочки не прошу — беру сколько нужно.', fx: 'words', pos: 'p-tl', size: 's-m', t: [30, 55, 60, 40] },
+      { text: '[Пускаю.|ex] [Забираю.|inh] Одно и то же.', fx: 'breathe', pos: 'p-c', size: 's-xl', t: [165, 60, 100, 45] },
+      { text: 'Отец — [тень.|shade] [Сожрал.|eat]', fx: 'devour', pos: 'p-cl', size: 's-xl', t: [370, 65, 70, 45], hit: .8 },
+      { text: 'Мать — [исток.|src] Подчинил.', fx: 'mirror', pos: 'p-hz', size: 's-xl', t: [545, 60, 70, 45], hit: .6 },
+      { text: 'Только сейчас.', fx: 'freeze', pos: 'p-c', size: 's-xxl', t: [715, 24, 90, 40], hit: 1 },
+    ] },
+
+  { id: 'walk', name: 'Скелет пошёл',
+    look: { focus: [0.55, 0.68], zoom: 1.1, heat: .5, glow: .6, grain: .11, vig: .72 },
+    lookEnd: { focus: [0.88, 0.62], zoom: 1.0, glow: .7 },
+    sound: { drone: .42, noise: .24, hz: 55, cut: 320 },
+    lines: [
+      { text: 'Скелет барсука встал и пошёл дальше.', fx: 'walk', pos: 'p-cl', size: 's-xl', t: [30, 120, 90, 50], hit: .5 },
+      { text: 'Полый ствол, через который смерть и жизнь танцуют.', fx: 'through', pos: 'p-wide hollow-all', size: 's-xl', t: [295, 70, 120, 45], hit: .4 },
+    ] },
+
+  { id: 'stone', name: 'Камень', pad: 0,
+    look: { focus: [0.55, 0.55], zoom: 1.0, heat: .3, glow: .5, grain: .1, vig: .78 },
+    lookEnd: { focus: [0.50, 0.86], zoom: 1.05, dark: .25, glow: .4, water: .35 },
+    sound: { drone: .5, noise: .16, hz: 41, cut: 220 },
+    lines: [
+      { text: 'Но не спеши, пленник', fx: 'slow', pos: 'p-tl', size: 's-l', t: [30, 90, 90, 45] },
+      { text: 'Камень, которым ты убьешь  ', fx: 'drop', pos: 'p-c', size: 's-xxl w700', t: [235, 60, 265, 60], hit: 1 },
+      { text: 'Обречен погрузиться на дно реки.', fx: 'sink', pos: 'p-bc', size: 's-xl', t: [380, 70, 60, 170] },
+    ] },
+
+  { id: 'silence', name: 'Тишина', pad: -2,
+    look: { focus: [0.62, 0.58], zoom: 1.0, heat: 0, glow: .4, grain: .05, vig: 1, dark: .78, water: .7, flicker: .2 },
+    lookEnd: { glow: .3, dark: .85 },
+    sound: { drone: .18, noise: .04, hz: 36, cut: 120 },
+    lines: [
+      { text: 'Теперь все?', fx: 'coda', pos: 'p-c', size: 's-l', t: [90, 150, 120, 2] },
+    ] },
+];
+
+/* t:[старт, вход, пауза, уход] (vh) → окна прогресса in/out и длина сцены */
+scenes.forEach(s => {
+  let end = 0;
+  s.lines.forEach(d => { const [a, b, c, e] = d.t; end = Math.max(end, (a + b + c + e) * PACE); });
+  s.len = end + (s.pad != null ? s.pad : 40) * PACE;
+  s.lines.forEach(d => {
+    const [a, b, c, e] = d.t.map(v => v * PACE);
+    d.in = [a / s.len, (a + b) / s.len];
+    d.out = [(a + b + c) / s.len, (a + b + c + e) / s.len];
+  });
+});
+
+/* ============================================================
+   3. СБОРКА DOM
+   ============================================================ */
+const LETTER_FX = new Set(['burn', 'teeth', 'type', 'ink']);
+const stage = $('#stage'), track = $('#track'), poem = $('#poem');
+const title = $('#title'), hint = $('#hint'), waverMap = $('#waverMap'), rippleMap = $('#rippleMap');
+const lines = [];            // все строки с ссылками на DOM
+const MARK = /\[([^\]|]+)\|([^\]]+)\]|\S+|\s+/g;
+
+function buildLine(d, sceneIdx, idx) {
+  const p = document.createElement('p');
+  p.className = `line ${d.pos} ${d.size}${LETTER_FX.has(d.fx) && !RM ? ' letters' : ''}`;
+  const inner = document.createElement('span'); inner.className = 'in';
+  const words = [], chars = [];
+  const bb = new Set((d.opts && d.opts.breakBefore) || []);
+  const tailFrom = d.opts && d.opts.tailFrom != null ? d.opts.tailFrom : Infinity;
+  let wi = 0, plain = '';
+  for (const m of d.text.matchAll(MARK)) {
+    if (m[1] === undefined && /^\s+$/.test(m[0])) { inner.appendChild(document.createTextNode(m[0])); plain += m[0]; continue; }
+    const word = m[1] !== undefined ? m[1] : m[0];
+    plain += word;
+    if (bb.has(wi)) inner.appendChild(document.createElement('br'));
+    const w = document.createElement('span');
+    w.className = 'w' + (m[2] ? ' ' + m[2] : '') + (wi >= tailFrom ? ' tail' : '');
+    w.dataset.i = wi;
+    if (LETTER_FX.has(d.fx) && !RM) {       // в спокойной версии буквы не режем — скринридер читает слова
+      for (const c of word) {
+        const ch = document.createElement('span'); ch.className = 'ch'; ch.textContent = c;
+        ch.dataset.th = Math.random().toFixed(3); ch.dataset.w = wi;
+        w.appendChild(ch); chars.push(ch);
+      }
+    } else w.textContent = word;
+    inner.appendChild(w); words.push(w); wi++;
+  }
+  p.appendChild(inner);
+  if (d.fx === 'mirror') { const r = document.createElement('span'); r.className = 'refl'; r.setAttribute('aria-hidden', 'true'); r.textContent = plain; p.appendChild(r); p._refl = r; }
+  // доступная копия
+  const ap = document.createElement('p'); ap.textContent = plain; poem.appendChild(ap);
+  return { d, el: p, inner, words, chars, refl: p._refl, vis: false, hitDone: false, scene: sceneIdx, idx, flags: {} };
+}
+
+(function build() {
+  const h = document.createElement('h2'); h.className = 'sr-only'; h.textContent = 'Теперь все?'; poem.appendChild(h);
+  scenes.forEach((s, si) => {
+    const sec = document.createElement('section'); sec.className = 'scene'; sec.dataset.id = s.id;
+    s.el = sec; s.start = scenes.slice(0, si).reduce((a, b) => a + b.len, 0);
+    s.L = Object.assign({}, LOOK0, s.look);
+    s.LE = Object.assign({}, s.L, s.lookEnd || {});
+    s.lines = s.lines.map((d, i) => { const L = buildLine(d, si, i); sec.appendChild(L.el); lines.push(L); return L; });
+    stage.appendChild(sec);
+  });
+})();
+const TOTAL = scenes.reduce((a, s) => a + s.len, 0);
+
+/* ============================================================
+   4. WEBGL — картинка как живой свет
+   ============================================================ */
+const glc = $('#gl');
+let gl = null, prog = null, U = {}, texReady = false;
+const VERT = `attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
+const FRAG = `
+precision highp float;
+uniform sampler2D uTex;
+uniform vec2 uRes,uMouse,uSun,uEyeL,uEyeR;
+uniform vec4 uWin,uLight;
+uniform float uTime,uHeat,uGlow,uVig,uGrain,uDark,uWater,uEyes,uRed,uFlicker,uOpen,uHorizon;
+float hash(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+float fbm(vec2 p){return noise(p)*.6+noise(p*2.1+3.7)*.3+noise(p*4.3+1.3)*.1;}
+float n2(vec2 p){return noise(p)*.7+noise(p*2.1+3.7)*.3;}
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes; uv.y=1.-uv.y;
+  float asp=uRes.x/uRes.y, t=uTime;
+  vec2 st=uWin.xy+(uv-.5)*uWin.zw;
+
+  /* псевдо-глубина из размытой яркости: тёмное — ближе, двигается сильнее */
+  float lumB=dot(texture2D(uTex,st,4.0).rgb,vec3(.299,.587,.114));
+  float depth=1.-smoothstep(.02,.35,lumB);
+  st+=(uMouse-.5)*uWin.zw*(.006+.024*depth);
+
+  /* тепловое марево у горизонта */
+  float hb=exp(-pow((st.y-uHorizon)*16.,2.));
+  hb*=.35+.65*exp(-pow((st.x-uSun.x)*2.2,2.));
+  float heat=uHeat*hb;
+  if(heat>.004){
+    vec2 hz=vec2(n2(vec2(st.x*40.,st.y*140.-t*1.6))-.5, n2(vec2(st.x*60.+t*.9,st.y*90.))-.5);
+    st+=hz*.016*heat;
+  }
+
+  /* рябь воды */
+  float wmask=smoothstep(uHorizon+.01,uHorizon+.12,st.y);
+  if(wmask>.001){
+    float rip=sin(st.y*260.+t*1.4+noise(st*30.)*4.)*.0012*wmask*(1.+4.*uWater);
+    st.x+=rip; st.y+=rip*.3*uWater;
+  }
+
+  /* хроматика */
+  float ca=.0012*heat+.0012*dot(uv-.5,uv-.5)+.002*uWater;
+  vec2 dir=normalize(uv-.5+1e-4);
+  vec3 col;
+  col.r=texture2D(uTex,st+dir*ca).r;
+  col.g=texture2D(uTex,st).g;
+  col.b=texture2D(uTex,st-dir*ca).b;
+  float lum=dot(col,vec3(.299,.587,.114));
+  col=mix(col,col*vec3(1.22,.92,.9),uRed);
+
+  /* глаз-горизонт: дышит, дрожит */
+  vec2 sS=.5+(uSun-uWin.xy)/uWin.zw;
+  vec2 d=(uv-sS)*vec2(asp,1.);
+  float breath=.82+.18*sin(t*.55)+.06*sin(t*1.9+1.);
+  breath+=(hash(vec2(floor(t*18.),3.))-.5)*.16*uFlicker;
+  float dd=dot(d,d);
+  float g=exp(-dd*140.)*1.3+exp(-dd*22.)*.5+exp(-dd*3.5)*.16;
+  col+=vec3(1.,.30,.14)*g*uGlow*breath;
+  float hl=exp(-pow((st.y-uHorizon)*55.,2.))*exp(-pow((st.x-uSun.x)*1.6,2.));
+  col+=vec3(.95,.22,.08)*hl*.45*uGlow*breath;
+
+  /* глаза пантеры — единственный холодный свет */
+  if(uEyes>.002){
+    vec2 e1=(st-uEyeL)*vec2(1.,1.4), e2=(st-uEyeR)*vec2(1.,1.4);
+    float ey=exp(-dot(e1,e1)*60000.)+exp(-dot(e2,e2)*60000.);
+    float eh=exp(-dot(e1,e1)*2500.)+exp(-dot(e2,e2)*2500.);
+    col+=(vec3(.8,1.,.88)*ey*1.2+vec3(.5,.8,.65)*eh*.25)*uEyes*(.85+.15*sin(t*3.));
+  }
+
+  /* чёрная вода поднимается */
+  if(uWater>.001){
+    float wl=1.-uWater*1.15+fbm(vec2(uv.x*6.,t*.3))*.05*uWater;
+    float flood=smoothstep(wl,wl+.18,uv.y);
+    vec3 wcol=col*vec3(.10,.07,.08)+vec3(.06,.015,.012)*g*uGlow;
+    col=mix(col,wcol,flood*smoothstep(0.,.05,uWater));
+  }
+
+  col=pow(max(col,0.),vec3(1.06));
+  col*=1.-uDark;
+
+  float v=1.-smoothstep(.35,1.05,length((uv-.5)*vec2(1.,1.15))*1.25);
+  col*=mix(1.,v,uVig);
+
+  float gr=hash(uv*uRes*.5+vec2(fract(t*13.1)*97.,fract(t*7.3)*51.))-.5;
+  col+=gr*uGrain*(.7+.6*(1.-lum));
+
+  /* веко: заставка (открывается) и кода (закрывается до щели) */
+  float op=clamp(uOpen,0.,1.);
+  vec2 q=(uv-sS)*vec2(asp,1.);
+  float ry=.009+pow(op,1.6)*1.6, rx=.10+op*3.;
+  float lid=1.-smoothstep(.55,1.,length(q/vec2(rx,ry)));
+  col+=vec3(1.,.3,.12)*exp(-dd*60.)*(1.-op)*.9*lid;
+  col*=mix(lid,1.,smoothstep(.92,1.,op));
+
+  /* свет курсора (раньше был отдельным слоем с mix-blend-mode) */
+  vec2 dl=(uv-uLight.xy)*vec2(asp,1.)/max(asp,1.);
+  float rl=length(dl)*100.*uLight.w;
+  float li=rl<12.9?mix(.22,.07,rl/12.9):mix(.07,0.,clamp((rl-12.9)/17.8,0.,1.));
+  col+=vec3(.886,.294,.22)*li*uLight.z;
+
+  gl_FragColor=vec4(col,1.);
+}`;
+
+function initGL() {
+  gl = glc.getContext('webgl', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  if (!gl) return false;
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) { console.warn(gl.getShaderInfoLog(o)); return null; } return o; };
+  const vs = sh(gl.VERTEX_SHADER, VERT), fs = sh(gl.FRAGMENT_SHADER, FRAG);
+  if (!vs || !fs) return false;
+  prog = gl.createProgram(); gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return false;
+  gl.useProgram(prog);
+  const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const a = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  ['uTex', 'uRes', 'uMouse', 'uLight', 'uSun', 'uEyeL', 'uEyeR', 'uWin', 'uTime', 'uHeat', 'uGlow', 'uVig', 'uGrain', 'uDark', 'uWater', 'uEyes', 'uRed', 'uFlicker', 'uOpen', 'uHorizon']
+    .forEach(n => U[n] = gl.getUniformLocation(prog, n));
+  gl.uniform2f(U.uSun, IMG.sun[0], IMG.sun[1]);
+  gl.uniform2f(U.uEyeL, IMG.eyeL[0], IMG.eyeL[1]);
+  gl.uniform2f(U.uEyeR, IMG.eyeR[0], IMG.eyeR[1]);
+  gl.uniform1f(U.uHorizon, IMG.horizon);
+  gl.viewport(0, 0, glc.width, glc.height);
+  return true;
+}
+
+function uploadTexture(img) {
+  // Картинка не степень двойки → рисуем в POT-канвас, чтобы были мипмапы (нужны для глубины).
+  const size = MOBILE() ? 1024 : 2048;
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  c.getContext('2d').drawImage(img, 0, 0, size, size);
+  const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, c);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.uniform1i(U.uTex, 0);
+  texReady = true;
+}
+
+/* Окно камеры: focus (доли картинки) + zoom → [fx, fy, sx, sy] видимой части */
+let W = innerWidth, H = innerHeight, VH = innerHeight, DPR = 1;
+function camWindow(focus, zoom) {
+  const sr = W / H, ir = IMG.w / IMG.h;
+  let sx, sy; if (sr > ir) { sx = 1; sy = ir / sr; } else { sx = sr / ir; sy = 1; }
+  sx /= zoom; sy /= zoom;
+  return [clamp(focus[0], sx / 2, 1 - sx / 2), clamp(focus[1], sy / 2, 1 - sy / 2), sx, sy];
+}
+
+/* ============================================================
+   5. ПЕПЕЛ — Canvas 2D частицы
+   ============================================================ */
+const ashC = $('#ash'), ashX = ashC.getContext('2d');
+const ash = [];
+function spawnAsh(x, y, n = 3) {
+  if (ash.length > 420) return;
+  for (let i = 0; i < n; i++) ash.push({ x, y, vx: (Math.random() - .5) * 28, vy: -22 - Math.random() * 55, life: 0, max: 1.2 + Math.random() * 1.8, s: 1 + Math.random() * 1.8, r: Math.random() });
+}
+function drawAsh(dt) {
+  if (!ash.length) { if (ashC._dirty) { ashX.clearRect(0, 0, ashC.width, ashC.height); ashC._dirty = false; } return; }
+  ashX.clearRect(0, 0, ashC.width, ashC.height); ashC._dirty = true;
+  for (let i = ash.length - 1; i >= 0; i--) {
+    const a = ash[i]; a.life += dt;
+    if (a.life > a.max) { ash.splice(i, 1); continue; }
+    const k = a.life / a.max;
+    a.x += (a.vx + Math.sin(a.life * 5 + a.r * 9) * 14) * dt; a.y += a.vy * dt; a.vy *= (1 - dt * .4);
+    const r = lerp(255, 120, k), g = lerp(110, 105, k), b = lerp(40, 100, k);
+    ashX.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${(1 - k) * .9})`;
+    ashX.fillRect(a.x, a.y, a.s, a.s);
+  }
+}
+
+/* ============================================================
+   6. ЗВУК — WebAudio: дрон + шум + низкие удары (без файлов)
+   ============================================================ */
+const sound = {
+  on: false, ctx: null, t: { drone: .35, noise: .12, hz: 55, cut: 240 }, nextSet: 0,
+  init() {
+    const C = this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const master = this.master = C.createGain(); master.gain.value = 0;
+    const comp = C.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 4;
+    master.connect(comp).connect(C.destination);
+    // дрон
+    this.lp = C.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.frequency.value = 240; this.lp.Q.value = .8;
+    this.dg = C.createGain(); this.dg.gain.value = 0;
+    this.dg.connect(this.lp).connect(master);
+    this.osc = [['sine', 1, .5], ['sine', 1.498, .22], ['triangle', .5, .35], ['sine', 2.01, .08]].map(([type, mul, g]) => {
+      const o = C.createOscillator(); o.type = type; o.frequency.value = 55 * mul;
+      const og = C.createGain(); og.gain.value = g; o.connect(og).connect(this.dg); o.start(); return { o, mul };
+    });
+    const lfo = C.createOscillator(); lfo.frequency.value = .09; const lg = C.createGain(); lg.gain.value = .12;
+    lfo.connect(lg).connect(this.dg.gain); lfo.start();
+    // шум-ветер
+    const len = C.sampleRate * 2, buf = C.createBuffer(1, len, C.sampleRate), ch = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+    const src = C.createBufferSource(); src.buffer = buf; src.loop = true;
+    this.bp = C.createBiquadFilter(); this.bp.type = 'bandpass'; this.bp.frequency.value = 380; this.bp.Q.value = .5;
+    this.ng = C.createGain(); this.ng.gain.value = 0;
+    src.connect(this.bp).connect(this.ng).connect(master); src.start();
+    this.hitLp = C.createBiquadFilter(); this.hitLp.type = 'lowpass'; this.hitLp.frequency.value = 220; this.hitLp.connect(master);
+    // короткий затухающий шум для удара
+    const hl = Math.floor(C.sampleRate * .3), hb = this.hitBuf = C.createBuffer(1, hl, C.sampleRate), hd = hb.getChannelData(0);
+    for (let i = 0; i < hl; i++) hd[i] = (Math.random() * 2 - 1) * (1 - i / hl);
+  },
+  toggle() {
+    if (!this.ctx) this.init();
+    this.on = !this.on; this.ctx.resume();
+    this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.master.gain.setTargetAtTime(this.on ? .8 : 0, this.ctx.currentTime, this.on ? 1.2 : .4);
+    return this.on;
+  },
+  set(p, look, now) {            // p — целевые параметры сцены, look — текущее состояние света
+    if (!this.on || now < this.nextSet) return;
+    this.nextSet = now + .12;
+    const T = this.ctx.currentTime, k = .35;
+    this.dg.gain.setTargetAtTime(p.drone * (1 - look.water * .6), T, k);
+    this.ng.gain.setTargetAtTime((p.noise + look.heat * .08) * .18 * (1 - look.water * .8), T, k);
+    this.lp.frequency.setTargetAtTime(p.cut * (1 - look.water * .7) + 40, T, k);
+    this.bp.frequency.setTargetAtTime(380 + look.heat * 420 - look.water * 250, T, k);
+    this.osc.forEach(({ o, mul }) => o.frequency.setTargetAtTime(p.hz * mul, T, .6));
+  },
+  hit(s = .6) {
+    if (!this.on) return;
+    const C = this.ctx, T = C.currentTime;
+    const o = C.createOscillator(), g = C.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(110 + 40 * s, T); o.frequency.exponentialRampToValueAtTime(34, T + .35);
+    g.gain.setValueAtTime(.0001, T); g.gain.exponentialRampToValueAtTime(.9 * s, T + .015); g.gain.exponentialRampToValueAtTime(.0001, T + 1.4 + s);
+    o.connect(g).connect(this.hitLp); o.start(T); o.stop(T + 2.6);
+    const n = C.createBufferSource(); n.buffer = this.hitBuf;
+    const ng = C.createGain(); ng.gain.setValueAtTime(.12 * s, T); ng.gain.exponentialRampToValueAtTime(.0001, T + .3);
+    n.connect(ng).connect(this.hitLp); n.start(T);
+  }
+};
+const auto = { on: false, y: 0 };
+const autoBtn = $('#auto');
+function setAuto(on) {
+  auto.on = on; if (on) auto.y = scrollY;
+  autoBtn.setAttribute('aria-pressed', on);
+  autoBtn.querySelector('span').textContent = on ? 'авто — вкл' : 'авто — выкл';
+}
+autoBtn.addEventListener('click', () => setAuto(!auto.on));
+autoBtn.addEventListener('pointerenter', () => $('#dot').classList.add('hover'));
+autoBtn.addEventListener('pointerleave', () => $('#dot').classList.remove('hover'));
+['wheel', 'touchstart'].forEach(ev => addEventListener(ev, () => { if (auto.on) setAuto(false); }, { passive: true }));
+addEventListener('keydown', e => { if (auto.on && !e.metaKey && !e.ctrlKey && ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(e.key)) setAuto(false); });
+
+const sndBtn = $('#snd');
+sndBtn.addEventListener('click', () => {
+  const on = sound.toggle();
+  sndBtn.setAttribute('aria-pressed', on); sndBtn.setAttribute('aria-label', on ? 'Выключить звук' : 'Включить звук');
+  sndBtn.querySelector('span').textContent = on ? 'звук — вкл' : 'звук — выкл';
+  requestGyro();
+});
+sndBtn.addEventListener('pointerenter', () => $('#dot').classList.add('hover'));
+sndBtn.addEventListener('pointerleave', () => $('#dot').classList.remove('hover'));
+
+/* ============================================================
+   7. СВЕТ — курсор / гироскоп / авто-дрейф
+   ============================================================ */
+const light = { x: W * .6, y: H * .5, tx: W * .6, ty: H * .5, gyro: false, has: false, a: 0 };
+const dotEl = $('#dot');
+addEventListener('pointermove', e => { if (e.pointerType === 'mouse' || e.pointerType === 'pen') { light.tx = e.clientX; light.ty = e.clientY; light.has = true; document.documentElement.classList.add('has-light'); } }, { passive: true });
+addEventListener('pointerdown', e => { if (e.pointerType === 'touch') { light.tx = e.clientX; light.ty = e.clientY; } }, { passive: true });
+function onOrient(e) {
+  if (e.gamma == null) return; light.gyro = true;
+  light.tx = W * clamp(.5 + e.gamma / 50, .05, .95);
+  light.ty = H * clamp(.5 + (e.beta - 45) / 70, .05, .95);
+}
+function requestGyro() {
+  if (!COARSE || light.gyro) return;
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')
+    DeviceOrientationEvent.requestPermission().then(s => { if (s === 'granted') addEventListener('deviceorientation', onOrient); }).catch(() => {});
+}
+if (COARSE && typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission !== 'function') addEventListener('deviceorientation', onOrient);
+
+/* ============================================================
+   8. ХОРЕОГРАФИЯ — эффекты строк
+   o = { e (вход 0..1), x (уход 0..1), k = e·(1−x), life (вся жизнь строки 0..1),
+         p (прогресс сцены), t (время), inner, line, words, chars, d, ctx }
+   ============================================================ */
+const F = (el, v) => { if (Q.level >= 3) v = ''; else if (Q.level >= 2) v = v.replace(/url\([^)]*\)\s*/g, ''); el.style.filter = v; };
+const S = (el, css) => { for (const k in css) el.style[k] = css[k]; };
+const stagger = (words, e, spread = .6, dy = .3) => {
+  const n = words.length;
+  words.forEach((w, i) => { const q = eo(clamp((e - (i / n) * spread) / (1 - spread))); w.style.opacity = q; w.style.transform = `translateY(${(1 - q) * dy}em)`; });
+};
+const FX = {
+  /* базовый: слова по очереди, мягкий уход */
+  words(o) { stagger(o.words, o.e); S(o.inner, { opacity: 1 - o.x, transform: `translateY(${-o.x * .25}em)` }); },
+
+  /* «всё сгорело»: буквы тлеют по краям, обугливаются и улетают пеплом */
+  burn(o) {
+    const from = (o.d.opts && o.d.opts.from) || 0, spd = (o.d.opts && o.d.opts.speed) || 1;
+    stagger(o.words, o.e, .5);
+    S(o.inner, { opacity: 1 });
+    if (o.x <= 0) { if (o.flags.burnt) { o.chars.forEach(c => { c.style.cssText = ''; c._ash = false; }); o.flags.burnt = false; } return; }
+    o.flags.burnt = true;
+    for (const c of o.chars) {
+      const th = +c.dataset.th, wi = +c.dataset.w;
+      if (wi < from) { c.style.opacity = 1 - o.x; continue; }
+      const b = clamp((o.x * 1.3 * spd - th * .9) / .5);
+      if (b <= 0) { c.style.cssText = ''; continue; }
+      if (b < .4) {
+        const g = b / .4;
+        S(c, { color: `rgb(255,${(170 - 110 * g) | 0},${(100 - 70 * g) | 0})`, textShadow: `0 0 ${6 + 18 * g}px rgba(255,100,40,${.75 * g})`, opacity: 1, transform: '', filter: '' });
+        if (!c._ash && g > .6) { c._ash = true; const r = c.getBoundingClientRect(); spawnAsh(r.left + r.width / 2, r.top + r.height * .3, 3); }
+      } else {
+        const g = (b - .4) / .6;
+        S(c, { color: '#4a2a24', textShadow: 'none', opacity: 1 - g, transform: `translateY(${-g * .55}em) rotate(${(th - .5) * g * 24}deg)`, filter: `blur(${g * 2.5}px)` });
+      }
+    }
+  },
+
+  /* «Пустота с зубами»: челюсть раскрывается, «зубами» дрожит укусом */
+  teeth(o) {
+    const s = eo(o.e);
+    S(o.inner, { opacity: o.k, transform: `scaleY(${.5 + .5 * s})`, letterSpacing: `${-.03 + .09 * s}em` });
+    for (const c of o.chars) if (c.parentNode.classList.contains('bite')) { const j = Math.sin(o.t * 23 + (+c.dataset.th) * 50) * 1.4 * (1 - o.x) * s; c.style.transform = `translate(${j}px,${-Math.abs(j)}px)`; }
+  },
+
+  /* «Нищета как чистота»: разрежённая, тонкая, из тумана */
+  clean(o) { S(o.inner, { opacity: o.k, letterSpacing: `${.55 - .47 * eo(o.e)}em` }); F(o.line, `blur(${(1 - eo(o.e)) * 5 + o.x * 4}px)`); },
+
+  /* «И смех»: резко. без переходов */
+  cut(o) { const on = o.e > .5 && o.x < .5; S(o.inner, { opacity: on ? 1 : 0, transform: on ? `translate(${(Math.sin(o.t * 34) * 2.4).toFixed(1)}px,${(Math.cos(o.t * 43) * 1.6).toFixed(1)}px)` : 'translateX(8px)' }); },
+
+  /* «Так было»: оседает вниз */
+  settle(o) { S(o.inner, { opacity: .92 * eo(o.e) * (1 - o.x), transform: `translateY(${o.e * .35 + o.x * .9}em)` }); },
+
+  /* «Библиотека закрыта»: рольставень */
+  shutter(o) { const a = Math.max((1 - eo(o.e)) * 50, ei(o.x) * 50); S(o.inner, { opacity: 1, clipPath: `inset(${a}% 0 ${a}% 0)`, letterSpacing: `${.28 + (1 - eo(o.e)) * .2}em` }); },
+
+  /* «Не сын и не человек»: красная черта вычёркивает */
+  strike(o) { stagger(o.words, o.e, .5, .2); o.inner.style.setProperty('--st', clamp((o.e - .62) / .38) * (1 - o.x)); S(o.inner, { opacity: 1 - o.x }); },
+
+  /* «Оператор без операций»: печатается, каретка моргает и глохнет */
+  type(o) {
+    const n = Math.floor(eo(o.e) * (o.chars.length + 2));
+    o.chars.forEach((c, i) => { c.style.opacity = i < n ? 1 : 0; c.classList.toggle('caret', i === n - 1 && o.x === 0 && (Math.floor(o.t * 2.4) % 2 === 0 || o.e < 1)); });
+    S(o.inner, { opacity: 1 - o.x });
+  },
+
+  /* «Зверь… открылись глаза»: веко открывается */
+  eyelid(o) {
+    const a = (1 - eo(o.e)) * 50;
+    S(o.inner, { opacity: 1 - o.x, clipPath: `inset(${a}% 0 ${a}% 0)` });
+    F(o.line, o.x ? `blur(${o.x * 6}px)` : '');
+    o.ctx.eyes = eo(o.e) * (1 - o.x * .3);
+  },
+
+  /* «не нужно»: предмет гаснет, отрицание остаётся */
+  negate(o) {
+    stagger(o.words, o.e, .4, .25);
+    const q = sstep(.72, 1, o.e);
+    for (const w of o.words) if (w.classList.contains('obj')) w.style.opacity = (1 - .78 * q) * eo(o.e);
+    S(o.inner, { opacity: 1 - o.x, transform: `translateY(${-o.x * .3}em)` });
+  },
+
+  /* «Пантера на бетоне»: падает всей массой */
+  thud(o) {
+    const s = eo(clamp(o.e * 1.15));
+    S(o.inner, { opacity: clamp(o.e * 3) * (1 - o.x), transform: `scale(${1.4 - .4 * s})` });
+    F(o.line, `blur(${(1 - s) * 12 + o.x * 3}px)`);
+    if (o.e > .5 && !o.flags.shook) { o.flags.shook = true; o.ctx.shake = 1; }
+    if (o.e < .1) o.flags.shook = false;
+  },
+
+  /* «Смех на обочине»: из-за правого края */
+  edge(o) { S(o.inner, { opacity: o.k, transform: `translateX(${(1 - eo(o.e)) * 24}vw)` }); },
+
+  /* «Дом, из которого не выгнать»: единственное неподвижное */
+  still(o) { S(o.inner, { opacity: sstep(0, 1, o.e) * (1 - sstep(0, 1, o.x)), transform: 'none' }); },
+
+  /* «Выкидыш…»: снизу, с шумом */
+  rise(o) { S(o.inner, { opacity: o.k, transform: `translateY(${(1 - eo(o.e)) * 28}vh)` }); F(o.line, `blur(${(1 - eo(o.e)) * 6}px)`); o.ctx.grainAdd = .07 * o.k; },
+
+  /* «Кровь из носа — чернила»: пишется сама, красным, с растеканием */
+  ink(o) {
+    const n = eo(o.e) * (o.chars.length + 1);
+    o.chars.forEach((c, i) => { const q = clamp(n - i); S(c, { opacity: q, color: `rgb(${(200 + 30 * (1 - q)) | 0},${(60 - 20 * q) | 0},${(50 - 15 * q) | 0})`, transform: `scale(${1.25 - .25 * q})`, filter: `blur(${(1 - q) * 5}px)` }); });
+    S(o.inner, { opacity: 1 - o.x, color: 'var(--red)' });
+    F(o.line, o.e < 1 && o.x === 0 ? 'url(#ink)' : (o.x ? `blur(${o.x * 5}px)` : ''));
+    o.ctx.darkAdd = .2 * o.k;   // чуть гасим кадр, чтобы красное читалось на красном
+  },
+
+  /* отражение в воде */
+  mirror(o) { S(o.inner, { opacity: o.k, transform: `translateY(${(1 - eo(o.e)) * .35}em)` }); if (o.refl) o.refl.style.opacity = .42 * o.k; },
+
+  /* «священная заброшенность»: буквы расходятся */
+  scatter(o) { S(o.inner, { opacity: o.k, letterSpacing: `${.02 + .3 * ei(o.life)}em` }); },
+
+  /* «Псы на обочине — это я»: входит с обочины, «это я» загорается */
+  step(o) {
+    stagger(o.words, o.e, .5, 0);
+    const q = sstep(.7, 1, o.e);
+    for (const w of o.words) { if (w.classList.contains('me')) w.style.transform = `scale(${1 + .08 * q})`; else w.style.opacity = eo(clamp(o.e * 1.4)) * (1 - .55 * q); }
+    S(o.inner, { opacity: 1 - o.x, transform: `translateX(${(1 - eo(o.e)) * -14}vw)` });
+  },
+  driftL(o) { S(o.inner, { opacity: o.k, transform: `translateX(${(1 - eo(o.e)) * -12 - o.life * 9}vw)` }); },
+  driftR(o) { S(o.inner, { opacity: o.k, transform: `translateX(${(1 - eo(o.e)) * 12 + o.life * 9}vw)` }); },
+
+  /* «Мир пахнет страхом»: сама строка идёт маревом */
+  waver(o) {
+    S(o.inner, { opacity: o.k });
+    F(o.line, 'url(#waver)');
+    waverMap.setAttribute('scale', (22 * o.k * (.6 + .4 * Math.sin(o.t * 2.1))).toFixed(1));
+    o.ctx.heatAdd = .6 * o.k;
+  },
+
+  /* «я и есть любовь»: слово во весь экран */
+  monolith(o) {
+    const q = clamp((o.e - .35) / .65);
+    for (const w of o.words) {
+      if (w.classList.contains('huge')) S(w, { opacity: q * (1 - o.x), transform: `translateY(${(1 - eo(q)) * 18}vh)`, filter: `blur(${(1 - q) * 14}px)` });
+      else { const i = +w.dataset.i, s = eo(clamp((o.e * 2.2 - i * .18))); S(w, { opacity: s * (1 - o.x), transform: `translateY(${(1 - s) * .3}em)` }); }
+    }
+    S(o.inner, { opacity: 1 });
+    o.ctx.glowAdd = .45 * q * (1 - o.x);
+  },
+
+  /* «Пускаю. Забираю.»: вдох — выдох */
+  breathe(o) {
+    stagger(o.words, o.e, .5, .2);
+    const s = .5 + .5 * Math.sin(o.t * 1.05);
+    for (const w of o.words) { if (w.classList.contains('ex')) w.style.letterSpacing = `${.02 + .22 * s}em`; if (w.classList.contains('inh')) w.style.letterSpacing = `${.24 - .22 * s}em`; }
+    S(o.inner, { opacity: 1 - o.x });
+  },
+
+  /* «Отец — тень. Сожрал.»: последнее слово съедает строку */
+  devour(o) {
+    stagger(o.words, clamp(o.e * 1.3), .5, .25);
+    const q = sstep(.6, 1, o.e);
+    for (const w of o.words) {
+      if (w.classList.contains('eat')) S(w, { opacity: q * (1 - o.x), transform: `scale(${.8 + .2 * eo(q)})` });
+      else w.style.opacity = eo(clamp(o.e * 1.3)) * (1 - .82 * q);
+    }
+    S(o.inner, { opacity: 1 - o.x });
+  },
+
+  /* «Только сейчас»: всё останавливается */
+  freeze(o) {
+    const on = o.e > .2 ? 1 : 0;
+    S(o.inner, { opacity: on * (1 - sstep(0, 1, o.x)), transform: 'none' });
+    o.ctx.freeze = on * (1 - o.x);
+  },
+
+  /* «Скелет барсука встал и пошёл дальше»: слова шагают, кадр идёт */
+  walk(o) {
+    const n = o.words.length;
+    o.words.forEach((w, i) => { const q = eo(clamp(o.e * (n + 1) - i)); S(w, { opacity: q, transform: `translate(${(1 - q) * .7}em,${Math.sin(o.p * 42 + i * 1.3) * .06 * o.k}em)` }); });
+    S(o.inner, { opacity: 1 - o.x, transform: `translateX(${-o.life * 12}vw)` });
+    o.ctx.bob = o.k; o.ctx.walkPhase = o.p;
+  },
+
+  /* «Полый ствол»: буквы полые, сквозь них танцуют два света */
+  through(o) {
+    const a = o.t * .8 + o.life * 7;
+    const x1 = 50 + 38 * Math.sin(a), y1 = 50 + 22 * Math.cos(a * 1.3), x2 = 50 - 38 * Math.sin(a + .4), y2 = 50 - 22 * Math.cos(a * 1.1);
+    S(o.inner, {
+      opacity: o.k,
+      backgroundImage: `radial-gradient(circle at ${x1}% ${y1}%,rgba(226,80,60,1) 0,rgba(216,70,58,0) 38%),radial-gradient(circle at ${x2}% ${y2}%,rgba(241,233,220,.95) 0,rgba(217,205,184,0) 32%),linear-gradient(rgba(241,233,220,.07),rgba(241,233,220,.07))`,
+      webkitTextStroke: `1px rgba(241,233,220,${.25 + .6 * eo(o.e)})`,
+    });
+  },
+
+  /* «Но не спеши, пленник»: слова расходятся, время растягивается */
+  slow(o) { stagger(o.words, o.e, .7, .15); S(o.inner, { opacity: 1 - o.x, wordSpacing: `${.05 + .9 * o.life}em`, letterSpacing: `${.01 + .08 * o.life}em` }); },
+
+  /* «Камень, которым ты убьешь»: падает под тяжестью */
+  drop(o) {
+    const q = ei(clamp(o.e * 1.05));
+    S(o.inner, { opacity: clamp(o.e * 4) * (1 - o.x), transform: `translateY(${(q - 1) * 26}vh) scaleY(${q >= 1 ? 1 : 1 + (1 - q) * .08})` });
+    if (o.e >= .95 && !o.flags.landed) { o.flags.landed = true; o.ctx.shake = 1.2; }
+    if (o.e < .2) o.flags.landed = false;
+  },
+
+  /* финал: строка тонет, страница уходит под воду */
+  sink(o) {
+    const x = o.x;
+    S(o.inner, { opacity: eo(o.e) * (1 - x * x), transform: `translateY(${x * 38}vh) scale(${1 - x * .08})` });
+    F(o.line, x > 0 ? `url(#ripple) blur(${x * 9}px)` : '');
+    rippleMap.setAttribute('scale', (34 * x).toFixed(1));
+    o.ctx.water = x; o.ctx.darkAdd = .35 * x;
+  },
+
+  /* кода: один вопрос, глаз закрывается до щели */
+  coda(o) { S(o.inner, { opacity: eo(o.e) * .9, letterSpacing: `${.04 + .12 * (1 - eo(o.e))}em` }); },
+};
+
+/* ============================================================
+   КАЛИБРОВКА ГЛАЗ — клавиша E.
+   Камера приближается к пантере, эффекты замирают. Кликни левый глаз, потом правый —
+   подсветка сразу встанет на место, координаты сохранятся в браузере и скопируются в буфер.
+   ============================================================ */
+const CAL = { on: false, fx: .33, fy: .53, z: 3, n: 0 };
+const CALV = { heat: 0, glow: .12, vig: .15, grain: .02, dark: 0, water: 0, eyes: 1, red: 0, flicker: 0 };
+const calEl = $('#cal');
+function calMsg(extra) {
+  calEl.textContent = `КАЛИБРОВКА ГЛАЗ — клик: ${CAL.n % 2 ? 'ПРАВЫЙ' : 'ЛЕВЫЙ'} глаз пантеры\nстрелки — сдвинуть кадр · + / − — масштаб · R — сбросить · Esc или E — выйти\n` +
+    (extra || `сейчас: eyeL [${IMG.eyeL.map(v => v.toFixed(4))}] · eyeR [${IMG.eyeR.map(v => v.toFixed(4))}]`);
+}
+function calToggle(on) {
+  CAL.on = on; CAL.n = 0;
+  document.documentElement.classList.toggle('calib', on);
+  if (on) calMsg();
+}
+addEventListener('keydown', e => {
+  if (e.code === 'KeyF' && !e.metaKey && !e.ctrlKey) { perf.show = !perf.show; document.documentElement.classList.toggle('show-fps', perf.show); return; }
+  if (RM || !gl) return;
+  if (e.code === 'KeyE' && !e.metaKey && !e.ctrlKey) { calToggle(!CAL.on); return; }
+  if (!CAL.on) return;
+  const k = e.key, st = .012 / CAL.z * 3;
+  if (k === 'Escape') calToggle(false);
+  else if (k === 'ArrowLeft') CAL.fx -= st; else if (k === 'ArrowRight') CAL.fx += st;
+  else if (k === 'ArrowUp') CAL.fy -= st; else if (k === 'ArrowDown') CAL.fy += st;
+  else if (k === '+' || k === '=') CAL.z = Math.min(10, CAL.z * 1.25);
+  else if (k === '-' || k === '_') CAL.z = Math.max(1.5, CAL.z / 1.25);
+  else if (e.code === 'KeyR') { IMG.eyeL = [.31, .525]; IMG.eyeR = [.345, .527]; CAL.n = 0; applyEyes(); try { localStorage.removeItem('verlib-eyes'); } catch (_) {} calMsg(); }
+  else return;
+  e.preventDefault(); if (CAL.on && !/^Esc|^R$/.test(k)) calMsg();
+});
+function applyEyes() { if (gl) { gl.uniform2f(U.uEyeL, IMG.eyeL[0], IMG.eyeL[1]); gl.uniform2f(U.uEyeR, IMG.eyeR[0], IMG.eyeR[1]); } }
+addEventListener('click', e => {
+  if (!CAL.on) return;
+  const w = camWindow([CAL.fx, CAL.fy], CAL.z);
+  const p = [w[0] + (e.clientX / W - .5) * w[2], w[1] + (e.clientY / H - .5) * w[3]];
+  if (CAL.n % 2 === 0) IMG.eyeL = p; else IMG.eyeR = p;
+  CAL.n++; applyEyes();
+  const txt = `eyeL: [${IMG.eyeL.map(v => +v.toFixed(4))}],\n  eyeR: [${IMG.eyeR.map(v => +v.toFixed(4))}],`;
+  try { localStorage.setItem('verlib-eyes', JSON.stringify({ L: IMG.eyeL, R: IMG.eyeR })); } catch (_) {}
+  console.log('Глаза пантеры, вставь в IMG:\n  ' + txt);
+  try { navigator.clipboard.writeText('  ' + txt); } catch (_) {}
+  calMsg(CAL.n % 2 ? 'левый глаз поставлен — теперь кликни правый' : 'готово, сохранено в браузере и скопировано в буфер\n' + txt.replace('\n', ' '));
+});
+
+/* ============================================================
+   9. ДВИЖОК
+   ============================================================ */
+const intro = { t0: 0, open: RM ? 1 : 0, done: RM };
+const ctx = {};
+const perf = { acc: 0, n: 0, warm: 1e12, fixed: false, show: false, nf: 0, t: 0 };
+const fpsEl = document.createElement('div'); fpsEl.id = 'fps'; document.body.appendChild(fpsEl);
+function perfTick(ms, now) {
+  perf.nf++;
+  if (now - perf.t > 500) { const fps = perf.nf * 1000 / (now - perf.t); perf.nf = 0; perf.t = now; if (perf.show) fpsEl.textContent = `${fps.toFixed(0)} fps · качество ${Q.level} · ${Math.round(Q.res * 100)}%`; }
+  if (perf.fixed || ms > 250 || document.hidden || now < perf.warm) return;
+  perf.acc += ms;
+  if (++perf.n < 45) return;
+  const avg = perf.acc / perf.n; perf.acc = 0; perf.n = 0;
+  if (avg > 25 && Q.level < 3) { setQuality(Q.level + 1); perf.warm = now + 1200; }
+}
+const cur = Object.assign({}, LOOK0, { focus: LOOK0.focus.slice(), open: RM ? 1 : 0 });
+let sm = 0, shaderTime = 0, last = performance.now(), activeScene = -1, mouseX = .6, mouseY = .5;
+
+function resetCtx() { ctx.eyes = 1; ctx.freeze = 0; ctx.water = 0; ctx.bob = 0; ctx.walkPhase = 0; ctx.heatAdd = 0; ctx.glowAdd = 0; ctx.darkAdd = 0; ctx.grainAdd = 0; ctx.shake = ctx.shake || 0; }
+
+function mixLook(A, B, t) {
+  const o = {};
+  for (const k in A) o[k] = k === 'focus' ? [lerp(A[k][0], B[k][0], t), lerp(A[k][1], B[k][1], t)] : lerp(A[k], B[k], t);
+  return o;
+}
+function sceneAt(u) { let i = 0; while (i < scenes.length - 1 && u >= scenes[i + 1].start) i++; return i; }
+
+function resetLine(L) {
+  L.inner.style.cssText = ''; L.el.style.filter = '';
+  L.words.forEach(w => w.style.cssText = ''); L.chars.forEach(c => { c.style.cssText = ''; c.classList.remove('caret'); c._ash = false; });
+  if (L.refl) L.refl.style.opacity = 0;
+  L.flags = {}; L._ox = NaN;
+}
+
+function runLine(L, p, t) {
+  const d = L.d, [i0, i1] = d.in, [o0, o1] = d.out;
+  const e = clamp((p - i0) / (i1 - i0)), x = clamp((p - o0) / (o1 - o0));
+  const vis = p >= i0 - .003 && x < 1;
+  if (!vis) { if (L.vis) { L.vis = false; L.el.style.visibility = 'hidden'; resetLine(L); } L.hitDone = p > o0; return; }
+  if (!L.vis) { L.vis = true; L.el.style.visibility = 'visible'; }
+  if (d.hit && !L.hitDone && e > .06) { L.hitDone = true; sound.hit(d.hit); }
+  if (e < .02) L.hitDone = false;
+  FX[d.fx || 'words']({ e, x, k: e * (1 - x), life: clamp((p - i0) / (o1 - i0)), p, t, inner: L.inner, line: L.el, words: L.words, chars: L.chars, refl: L.refl, d, flags: L.flags, ctx });
+  // свет курсора в координатах каждого слова/буквы (чтение → потом запись)
+  if (L.el.classList.contains('nolit')) return;
+  const r = L.inner.getBoundingClientRect();
+  const ox = light.x - r.left, oy = light.y - r.top;
+  if (!L.chars.length && Math.abs(ox - L._ox) < 4 && Math.abs(oy - L._oy) < 4 && Math.abs(r.width - L._rw) < 2) return;
+  L._ox = ox; L._oy = oy; L._rw = r.width;
+  const leaves = L.chars.length ? L.chars : L.words;
+  const pos = leaves.map(n => [n.offsetLeft, n.offsetTop]);
+  leaves.forEach((n, i) => { n.style.setProperty('--lx', (ox - pos[i][0]).toFixed(0) + 'px'); n.style.setProperty('--ly', (oy - pos[i][1]).toFixed(0) + 'px'); });
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const ms = now - last, dt = Math.min(.05, ms / 1000); last = now;
+  perfTick(ms, now);
+  const t = now / 1000;
+
+  /* свет: курсор / гироскоп / дрейф */
+  if (!light.has && !light.gyro) { light.tx = W * (.5 + .36 * Math.sin(t * .21)); light.ty = H * (.5 + .26 * Math.sin(t * .157 + 1.3)); }
+  const lk = 1 - Math.exp(-dt * 7);
+  light.x += (light.tx - light.x) * lk; light.y += (light.ty - light.y) * lk;
+  light.a += ((intro.done && !RM ? 1 : 0) - light.a) * (1 - Math.exp(-dt * 1.2));
+  dotEl.style.transform = `translate(${light.tx.toFixed(1)}px,${light.ty.toFixed(1)}px)${dotEl.classList.contains('hover') ? ' scale(3)' : ''}`;
+  mouseX += (light.x / W - mouseX) * lk * .6; mouseY += (light.y / H - mouseY) * lk * .6;
+
+  /* скролл → время */
+  if (auto.on && intro.done) {
+    auto.y += AUTO_SPEED * VH / 100 * dt; scrollTo(0, auto.y);
+    if (auto.y >= document.documentElement.scrollHeight - innerHeight - 2) setAuto(false);
+  }
+  const raw = clamp(scrollY / VH * 100, 0, TOTAL);   // прогресс в vh-единицах
+  const stp = (raw - sm) * (1 - Math.exp(-dt * 6)), cap = MAXV * dt;   // потолок скорости чтения
+  sm += stp > cap ? cap : stp < -cap ? -cap : stp;
+  const si = sceneAt(sm), s = scenes[si], p = clamp((sm - s.start) / s.len);
+  if (si !== activeScene) { scenes.forEach((sc, i) => sc.el.classList.toggle('active', i === si)); if (activeScene >= 0) scenes[activeScene].lines.forEach(L => { if (L.vis) { L.vis = false; L.el.style.visibility = 'hidden'; resetLine(L); } }); activeScene = si; }
+
+  resetCtx();
+  if (!RM) for (const L of s.lines) runLine(L, p, t);
+
+  /* состояние света: внутри сцены → к следующей → временное сглаживание */
+  let L = mixLook(s.L, s.LE, p);
+  if (si < scenes.length - 1) L = mixLook(L, scenes[si + 1].L, sstep(.84, 1, p));
+  L.eyes *= ctx.eyes; L.heat += ctx.heatAdd; L.glow += ctx.glowAdd; L.dark = clamp(L.dark + ctx.darkAdd); L.grain += ctx.grainAdd; L.water = clamp(L.water + ctx.water);
+  if (ctx.bob) { L.focus[1] += Math.sin(ctx.walkPhase * 42) * .005 * ctx.bob; L.focus[0] += Math.sin(ctx.walkPhase * 21) * .003 * ctx.bob; }
+  if (ctx.shake > .01) { L.focus[0] += (Math.random() - .5) * .012 * ctx.shake; L.focus[1] += (Math.random() - .5) * .012 * ctx.shake; ctx.shake *= Math.pow(.02, dt); } else ctx.shake = 0;
+  const open = s.id === 'silence' ? 1 - .93 * sstep(0, 1, p) : 1;
+  const tk = 1 - Math.exp(-dt * 6);
+  for (const k in L) { if (k === 'focus') { cur.focus[0] = lerp(cur.focus[0], L.focus[0], tk); cur.focus[1] = lerp(cur.focus[1], L.focus[1], tk); } else cur[k] = lerp(cur[k], L[k], tk); }
+  cur.freeze = lerp(cur.freeze || 0, ctx.freeze, tk);
+  shaderTime += dt * (1 - cur.freeze);
+
+  /* заставка */
+  if (!intro.done) {
+    const it = (t - intro.t0);
+    intro.open = eio(clamp(it / 1.7));
+    if (it > .9) title.classList.add('on');
+    if (it > 1.9) { hint.classList.add('on'); sndBtn.classList.add('show'); autoBtn.classList.add('show'); }
+    if (it > 2.3) { document.documentElement.classList.remove('lock'); intro.done = true; perf.warm = now + 2000; if (light.has) dotEl.style.opacity = 1; }
+  } else {
+    const f = 1 - clamp(scrollY / (VH * .45));
+    title.style.opacity = f; hint.style.opacity = f;
+    if (light.has && dotEl.style.opacity !== '1') dotEl.style.opacity = 1;
+  }
+  cur.open = Math.min(intro.open, open);
+
+  /* шейдер */
+  const win = CAL.on ? camWindow([CAL.fx, CAL.fy], CAL.z) : camWindow(cur.focus, cur.zoom);
+  stage.style.setProperty('--hzy', ((.5 + (IMG.horizon - win[1]) / win[3]) * H).toFixed(0) + 'px');
+  if (gl && texReady) {
+    const V = CAL.on ? CALV : cur;
+    gl.uniform2f(U.uRes, glc.width, glc.height);
+    gl.uniform4f(U.uWin, win[0], win[1], win[2], win[3]);
+    gl.uniform2f(U.uMouse, CAL.on ? .5 : mouseX, CAL.on ? .5 : mouseY);
+    gl.uniform4f(U.uLight, light.x / W, light.y / H, CAL.on ? 0 : light.a, MOBILE() ? .583 : 1);
+    gl.uniform1f(U.uTime, shaderTime);
+    gl.uniform1f(U.uHeat, RM ? 0 : V.heat); gl.uniform1f(U.uGlow, V.glow); gl.uniform1f(U.uVig, V.vig);
+    gl.uniform1f(U.uGrain, RM ? .03 : V.grain); gl.uniform1f(U.uDark, V.dark); gl.uniform1f(U.uWater, V.water);
+    gl.uniform1f(U.uEyes, V.eyes); gl.uniform1f(U.uRed, V.red); gl.uniform1f(U.uFlicker, RM ? 0 : V.flicker); gl.uniform1f(U.uOpen, CAL.on ? 1 : cur.open);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  drawAsh(dt);
+  sound.set(s.sound, cur, t);
+}
+
+/* ============================================================
+   10. РАЗМЕРЫ, ЗАГРУЗКА, СТАРТ
+   ============================================================ */
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  if (Math.abs(h - VH) > 140 || w !== W) VH = h;      // игнорируем прыжки адресной строки
+  W = w; H = h;
+  DPR = 1;                                   // шейдер считается в CSS-пикселях × Q.res
+  glc.width = Math.round(W * DPR * Q.res); glc.height = Math.round(H * DPR * Q.res);
+  ashC.width = W; ashC.height = H;
+  if (gl) gl.viewport(0, 0, glc.width, glc.height);
+  track.style.height = RM ? '0px' : `${Math.round((TOTAL + 100) / 100 * VH)}px`;
+}
+addEventListener('resize', resize, { passive: true });
+addEventListener('orientationchange', () => setTimeout(resize, 300));
+resize();
+
+const hasGL = initGL();
+const img = new Image();
+img.decoding = 'async';
+img.onload = () => { try { if (hasGL) uploadTexture(img); else throw 0; } catch (e) { glc.classList.add('fallback'); glc.style.backgroundImage = `url("${encodeURI(IMG.src)}")`; } start(); };
+img.onerror = () => { glc.classList.add('fallback'); start(); };
+img.src = encodeURI(IMG.src);
+
+{ const qs = new URLSearchParams(location.search), q = qs.get('q');
+  if (q !== null && +q >= 0 && +q <= 3) { perf.fixed = true; Q.level = +q; Q.res = QRES[+q]; }
+  if (qs.has('fps')) { perf.show = true; document.documentElement.classList.add('show-fps'); } }
+let started = false;
+function start() {
+  if (started) return; started = true;
+  if (perf.fixed) setQuality(Q.level);
+  const go = () => {
+    $('#loader').classList.add('off');
+    intro.t0 = performance.now() / 1000 + .25;
+    if (RM) { document.documentElement.classList.remove('lock'); title.classList.add('on'); hint.classList.add('on'); sndBtn.classList.add('show'); }
+    requestAnimationFrame(frame);
+  };
+  Promise.race([document.fonts ? document.fonts.ready : Promise.resolve(), new Promise(r => setTimeout(r, 2500))]).then(go);
+}
+if (RM) { stage.removeAttribute('aria-hidden'); poem.hidden = true; }
+})();
+</script>
+</body>
+</html>
